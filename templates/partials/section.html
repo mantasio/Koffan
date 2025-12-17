@@ -8,21 +8,21 @@
 {{$percentage := 0}}
 {{if gt $totalItems 0}}{{$percentage = div (mul $completedItems 100) $totalItems}}{{end}}
 
-{{if gt $totalItems 0}}
-<div id="section-{{.Section.ID}}" class="bg-white rounded-xl border border-stone-200 mb-4">
+<!-- Always render section for offline support - hidden when empty via CSS -->
+<div id="section-{{.Section.ID}}" class="bg-white rounded-xl border border-stone-200 mb-4 {{if eq $totalItems 0}}hidden{{end}}" data-section-id="{{.Section.ID}}">
     <!-- Section Header -->
     <div class="px-4 py-3 border-b border-stone-100 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <h3 class="font-medium text-stone-800">{{.Section.Name}}</h3>
-            <span class="text-xs text-stone-400">{{$completedItems}}/{{$totalItems}}</span>
+            <span class="text-xs text-stone-400 section-counter">{{$completedItems}}/{{$totalItems}}</span>
         </div>
         {{if eq $percentage 100}}
         <span class="text-xs font-medium text-pink-500 bg-pink-50 px-2 py-0.5 rounded-full" x-text="t('list.completed')"></span>
         {{end}}
     </div>
 
-    <!-- Active Items -->
-    <div class="divide-y divide-stone-100">
+    <!-- Active Items Container -->
+    <div class="divide-y divide-stone-100 active-items">
         {{range .Section.Items}}
         {{if not .Completed}}
         {{template "partials/item" dict "Item" . "Sections" $.Sections}}
@@ -53,5 +53,4 @@
     </div>
     {{end}}
 </div>
-{{end}}
 {{end}}

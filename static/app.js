@@ -931,10 +931,14 @@ document.addEventListener('DOMContentLoaded', function() {
             // Create optimistic item HTML
             const itemHtml = createOfflineItemHtml(tempId, name, description, sectionId);
 
-            // Find the section and add item to it
-            const sectionEl = document.querySelector(`[id^="section-${sectionId}"]`);
+            // Find the section by exact ID and add item to it
+            const sectionEl = document.getElementById(`section-${sectionId}`);
             if (sectionEl) {
-                const itemsContainer = sectionEl.querySelector('.divide-y');
+                // Show section if it was hidden (empty section)
+                sectionEl.classList.remove('hidden');
+
+                // Find the active items container (not completed items)
+                const itemsContainer = sectionEl.querySelector('.active-items');
                 if (itemsContainer) {
                     // Insert at the beginning (newest first based on sort_order)
                     itemsContainer.insertAdjacentHTML('afterbegin', itemHtml);
@@ -945,7 +949,23 @@ document.addEventListener('DOMContentLoaded', function() {
                         newItem.classList.add('item-enter');
                         setTimeout(() => newItem.classList.remove('item-enter'), 300);
                     }
+
+                    // Update section counter
+                    const counter = sectionEl.querySelector('.section-counter');
+                    if (counter) {
+                        const text = counter.textContent;
+                        const match = text.match(/(\d+)\/(\d+)/);
+                        if (match) {
+                            const completed = parseInt(match[1]);
+                            const total = parseInt(match[2]) + 1;
+                            counter.textContent = `${completed}/${total}`;
+                        } else {
+                            counter.textContent = '0/1';
+                        }
+                    }
                 }
+            } else {
+                console.warn('[Offline] Section not found in DOM:', sectionId);
             }
 
             // Queue action for sync
@@ -960,17 +980,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('[Offline] Item queued:', name);
             });
 
-            // Clear form
-            if (typeof clearFormKeepSection === 'function') {
+            // Clear form (use appropriate method based on form type)
+            if (typeof clearFormKeepSection === 'function' && form.id === 'add-item-form') {
                 clearFormKeepSection(form);
             } else {
                 form.reset();
             }
 
-            // Update stats optimistically
+            // Update stats and close mobile modal
             const alpineData = Alpine.$data(document.querySelector('[x-data="shoppingList()"]'));
             if (alpineData) {
                 alpineData.stats.total++;
+                // Close mobile add item modal if open
+                alpineData.showAddItem = false;
             }
 
             return false;
