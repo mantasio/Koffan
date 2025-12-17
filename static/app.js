@@ -7,6 +7,11 @@ function shoppingList() {
         reconnectAttempts: 0,
         maxReconnectAttempts: 5,
 
+        // Offline support
+        isOnline: navigator.onLine,
+        processingQueue: false,
+        offlineStorageReady: false,
+
         // Modals
         showManageSections: false,
         showAddItem: false,
@@ -36,7 +41,8 @@ function shoppingList() {
         pendingLocalActions: {},
         localActionTimeout: 1000, // ms to ignore WebSocket updates after local action
 
-        init() {
+        async init() {
+            await this.initOffline();
             this.initWebSocket();
             this.initCompletedSectionsStore();
             this.initLocalActionTracking();
@@ -126,12 +132,165 @@ function shoppingList() {
             return false;
         },
 
+        // ===== OFFLINE SUPPORT =====
+
+        async initOffline() {
+            // Initialize IndexedDB
+            try {
+                await window.offlineStorage.init();
+                this.offlineStorageReady = true;
+                console.log('[App] Offline storage initialized');
+
+                // Cache data on load if online
+                if (this.isOnline) {
+                    this.cacheData();
+                }
+            } catch (error) {
+                console.error('[App] Failed to initialize offline storage:', error);
+            }
+
+            // Online/offline event listeners
+            window.addEventListener('online', () => {
+                console.log('[App] Back online');
+                this.isOnline = true;
+                this.processOfflineQueue();
+            });
+
+            window.addEventListener('offline', () => {
+                console.log('[App] Gone offline');
+                this.isOnline = false;
+            });
+        },
+
+        async cacheData() {
+            if (!this.offlineStorageReady) return;
+
+            try {
+                const response = await fetch('/api/data');
+                if (response.ok) {
+                    const data = await response.json();
+                    await window.offlineStorage.saveSections(data.sections || []);
+                    await window.offlineStorage.setLastSyncTimestamp(data.timestamp);
+                    console.log('[App] Data cached for offline use');
+                }
+            } catch (error) {
+                console.error('[App] Failed to cache data:', error);
+            }
+        },
+
+        async queueOfflineAction(action) {
+            if (!this.offlineStorageReady) {
+                console.warn('[App] Offline storage not ready, action lost:', action);
+                return;
+            }
+
+            await window.offlineStorage.queueAction(action);
+            console.log('[App] Action queued for sync:', action.type);
+        },
+
+        async processOfflineQueue() {
+            if (this.processingQueue || !this.isOnline || !this.offlineStorageReady) return;
+
+            this.processingQueue = true;
+            console.log('[App] Processing offline queue...');
+
+            try {
+                const actions = await window.offlineStorage.getQueuedActions();
+
+                if (actions.length === 0) {
+                    console.log('[App] No queued actions');
+                    this.processingQueue = false;
+                    return;
+                }
+
+                console.log('[App] Processing', actions.length, 'queued actions');
+
+                for (const action of actions) {
+                    try {
+                        const fetchOptions = {
+                            method: action.method,
+                            headers: action.headers || {}
+                        };
+
+                        if (action.body) {
+                            fetchOptions.body = action.body;
+                        }
+
+                        const response = await fetch(action.url, fetchOptions);
+
+                        if (response.ok || response.status === 404) {
+                            // Success or item no longer exists - remove from queue
+                            await window.offlineStorage.clearAction(action.id);
+                            console.log('[App] Synced action:', action.type);
+                        } else {
+                            console.error('[App] Failed to sync action:', action.type, response.status);
+                        }
+                    } catch (error) {
+                        console.error('[App] Error syncing action:', action.type, error);
+                        // Keep in queue for retry
+                    }
+                }
+
+                // Refresh data after sync
+                await this.cacheData();
+                this.refreshList();
+                this.refreshStats();
+
+            } finally {
+                this.processingQueue = false;
+            }
+        },
+
+        async fullRefresh() {
+            console.log('[App] Full refresh triggered');
+
+            // Process any pending offline actions first
+            if (this.isOnline) {
+                await this.processOfflineQueue();
+            }
+
+            // Reconnect WebSocket if needed
+            if (!this.connected && this.isOnline) {
+                this.reconnectAttempts = 0;
+                this.connect();
+            }
+
+            // Refresh from server
+            if (this.isOnline) {
+                this.refreshList();
+                this.refreshStats();
+                this.cacheData();
+            }
+        },
+
+        // Wrapper for fetch that queues action when offline
+        async offlineFetch(url, options, actionType) {
+            if (this.isOnline) {
+                return fetch(url, options);
+            }
+
+            // Queue action for later sync
+            await this.queueOfflineAction({
+                type: actionType,
+                url: url,
+                method: options.method || 'GET',
+                headers: options.headers || {},
+                body: options.body || null
+            });
+
+            // Return fake successful response
+            return { ok: true, offline: true };
+        },
+
+        // ===== WEBSOCKET =====
+
         initWebSocket() {
             this.connect();
 
             document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible' && !this.connected) {
-                    this.connect();
+                if (document.visibilityState === 'visible') {
+                    // Full refresh when returning from background
+                    this.fullRefresh();
                 }
             });
         },
@@ -421,37 +580,67 @@ function shoppingList() {
 
         async toggleUncertain() {
             if (!this.mobileActionItem) return;
+            const itemId = this.mobileActionItem.id;
+
+            // Mark as local action to prevent WebSocket race condition
+            this.markLocalAction('item_updated');
+
+            // Optimistic UI update
+            this.mobileActionItem.uncertain = !this.mobileActionItem.uncertain;
+            this.mobileActionItem = null;
+
             try {
-                // Mark as local action to prevent WebSocket race condition
-                this.markLocalAction('item_updated');
-                const response = await fetch(`/items/${this.mobileActionItem.id}/uncertain`, {
-                    method: 'POST'
-                });
-                if (response.ok) {
-                    this.mobileActionItem.uncertain = !this.mobileActionItem.uncertain;
-                    // Close modal and refresh list for mobile (no HTMX swap here)
-                    this.mobileActionItem = null;
+                const response = await this.offlineFetch(
+                    `/items/${itemId}/uncertain`,
+                    { method: 'POST' },
+                    'toggle_uncertain'
+                );
+
+                if (response.ok && !response.offline) {
                     this.refreshList();
                 }
             } catch (error) {
                 console.error('Failed to toggle uncertain:', error);
+                // Queue for offline sync
+                await this.queueOfflineAction({
+                    type: 'toggle_uncertain',
+                    url: `/items/${itemId}/uncertain`,
+                    method: 'POST'
+                });
             }
+
+            this.refreshList();
         },
 
         async moveToSection(sectionId) {
             if (!this.mobileActionItem) return;
+            const itemId = this.mobileActionItem.id;
+            this.mobileActionItem = null;
+
             try {
-                const response = await fetch(`/items/${this.mobileActionItem.id}/move`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: `section_id=${sectionId}`
-                });
+                const response = await this.offlineFetch(
+                    `/items/${itemId}/move`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `section_id=${sectionId}`
+                    },
+                    'move_item'
+                );
+
                 if (response.ok) {
-                    this.mobileActionItem = null;
                     this.refreshList();
                 }
             } catch (error) {
                 console.error('Failed to move item:', error);
+                await this.queueOfflineAction({
+                    type: 'move_item',
+                    url: `/items/${itemId}/move`,
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `section_id=${sectionId}`
+                });
+                this.refreshList();
             }
         },
 
@@ -460,18 +649,38 @@ function shoppingList() {
             const confirmed = confirm(t('confirm.delete_item', { name: this.mobileActionItem.name }));
             if (!confirmed) return;
 
+            const itemId = this.mobileActionItem.id;
+
+            // Optimistic UI - remove item from DOM
+            const itemEl = document.getElementById(`item-${itemId}`);
+            if (itemEl) {
+                itemEl.classList.add('item-exit');
+                setTimeout(() => itemEl.remove(), 200);
+            }
+
+            this.mobileActionItem = null;
+            this.markLocalAction('item_deleted');
+
             try {
-                const response = await fetch(`/items/${this.mobileActionItem.id}`, {
-                    method: 'DELETE'
-                });
+                const response = await this.offlineFetch(
+                    `/items/${itemId}`,
+                    { method: 'DELETE' },
+                    'delete_item'
+                );
+
                 if (response.ok) {
-                    this.mobileActionItem = null;
-                    this.refreshList();
                     this.refreshStats();
                 }
             } catch (error) {
                 console.error('Failed to delete item:', error);
+                await this.queueOfflineAction({
+                    type: 'delete_item',
+                    url: `/items/${itemId}`,
+                    method: 'DELETE'
+                });
             }
+
+            this.refreshStats();
         },
 
         // Edit Item
@@ -488,20 +697,39 @@ function shoppingList() {
         async submitEditItem() {
             if (!this.editItemName.trim() || !this.editingItem) return;
 
+            const itemId = this.editingItem.id;
+            const name = this.editItemName.trim();
+            const description = this.editItemDescription.trim();
+            const body = `name=${encodeURIComponent(name)}&description=${encodeURIComponent(description)}`;
+
+            this.editingItem = null;
+            this.editItemName = '';
+            this.editItemDescription = '';
+
             try {
-                const response = await fetch(`/items/${this.editingItem.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: `name=${encodeURIComponent(this.editItemName.trim())}&description=${encodeURIComponent(this.editItemDescription.trim())}`
-                });
+                const response = await this.offlineFetch(
+                    `/items/${itemId}`,
+                    {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: body
+                    },
+                    'edit_item'
+                );
+
                 if (response.ok) {
-                    this.editingItem = null;
-                    this.editItemName = '';
-                    this.editItemDescription = '';
                     this.refreshList();
                 }
             } catch (error) {
                 console.error('Failed to save edit:', error);
+                await this.queueOfflineAction({
+                    type: 'edit_item',
+                    url: `/items/${itemId}`,
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body
+                });
+                this.refreshList();
             }
         },
 
@@ -571,11 +799,24 @@ function shoppingList() {
             }, 200);
 
             // Send request to server in background
+            this.markLocalAction('items_reordered');
             try {
-                this.markLocalAction('items_reordered');
-                await fetch(`/items/${itemId}/move-${direction}`, { method: 'POST' });
+                const response = await this.offlineFetch(
+                    `/items/${itemId}/move-${direction}`,
+                    { method: 'POST' },
+                    'move_item_order'
+                );
+
+                if (!response.ok && !response.offline) {
+                    console.error('Failed to move item on server');
+                }
             } catch (error) {
                 console.error('Failed to move item:', error);
+                await this.queueOfflineAction({
+                    type: 'move_item_order',
+                    url: `/items/${itemId}/move-${direction}`,
+                    method: 'POST'
+                });
             }
         },
 
@@ -630,12 +871,24 @@ function shoppingList() {
             }
 
             // Send request to server in background
+            this.markLocalAction('item_updated');
             try {
-                this.markLocalAction('item_updated');
-                await fetch(`/items/${itemId}/uncertain`, { method: 'POST' });
-                this.refreshStats();
+                const response = await this.offlineFetch(
+                    `/items/${itemId}/uncertain`,
+                    { method: 'POST' },
+                    'toggle_uncertain'
+                );
+
+                if (response.ok) {
+                    this.refreshStats();
+                }
             } catch (error) {
                 console.error('Failed to toggle uncertain:', error);
+                await this.queueOfflineAction({
+                    type: 'toggle_uncertain',
+                    url: `/items/${itemId}/uncertain`,
+                    method: 'POST'
+                });
             }
         }
     };
@@ -745,8 +998,27 @@ window.toggleUncertain = async function(itemId) {
 
     // Send request to server in background
     try {
-        await fetch(`/items/${itemId}/uncertain`, { method: 'POST' });
+        if (navigator.onLine) {
+            await fetch(`/items/${itemId}/uncertain`, { method: 'POST' });
+        } else {
+            // Queue for offline sync
+            await window.offlineStorage.queueAction({
+                type: 'toggle_uncertain',
+                url: `/items/${itemId}/uncertain`,
+                method: 'POST'
+            });
+        }
     } catch (error) {
         console.error('Failed to toggle uncertain:', error);
+        // Queue for offline sync on error
+        try {
+            await window.offlineStorage.queueAction({
+                type: 'toggle_uncertain',
+                url: `/items/${itemId}/uncertain`,
+                method: 'POST'
+            });
+        } catch (e) {
+            console.error('Failed to queue action:', e);
+        }
     }
 };

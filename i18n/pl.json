@@ -70,5 +70,8 @@
     "delete_item": "Usunąć \"{{name}}\"?",
     "delete_sections": "Usunąć {{count}} wybranych sekcji?",
     "delete_section": "Usunąć sekcję '{{name}}'?"
+  },
+  "offline": {
+    "banner": "Tryb offline - zmiany zostaną zsynchronizowane"
   }
 }

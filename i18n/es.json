@@ -70,5 +70,8 @@
     "delete_item": "¿Eliminar \"{{name}}\"?",
     "delete_sections": "¿Eliminar {{count}} secciones seleccionadas?",
     "delete_section": "¿Eliminar sección '{{name}}'?"
+  },
+  "offline": {
+    "banner": "Modo sin conexión - los cambios se sincronizarán"
   }
 }

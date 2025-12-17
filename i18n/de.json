@@ -70,5 +70,8 @@
     "delete_item": "\"{{name}}\" löschen?",
     "delete_sections": "{{count}} ausgewählte Abteilungen löschen?",
     "delete_section": "Abteilung '{{name}}' löschen?"
+  },
+  "offline": {
+    "banner": "Offline-Modus - Änderungen werden synchronisiert"
   }
 }

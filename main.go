@@ -150,6 +150,9 @@ func main() {
 	// Stats API
 	app.Get("/stats", handlers.GetStats)
 
+	// Offline data API
+	app.Get("/api/data", handlers.GetAllData)
+
 	// Batch operations
 	app.Post("/sections/batch-delete", handlers.BatchDeleteSections)
 

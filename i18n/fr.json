@@ -70,5 +70,8 @@
     "delete_item": "Supprimer \"{{name}}\" ?",
     "delete_sections": "Supprimer {{count}} rayons sélectionnés ?",
     "delete_section": "Supprimer le rayon '{{name}}' ?"
+  },
+  "offline": {
+    "banner": "Mode hors ligne - les modifications seront synchronisées"
   }
 }

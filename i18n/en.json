@@ -70,5 +70,8 @@
     "delete_item": "Delete \"{{name}}\"?",
     "delete_sections": "Delete {{count}} selected sections?",
     "delete_section": "Delete section '{{name}}'?"
+  },
+  "offline": {
+    "banner": "Offline mode - changes will be synced"
   }
 }
