@@ -883,17 +883,24 @@ function shoppingList() {
                     } else if (description) {
                         // Add description element if it doesn't exist
                         const contentDiv = itemEl.querySelector('.flex-1.min-w-0');
-                        if (contentDiv && nameEl) {
+                        if (contentDiv) {
                             const newDescEl = document.createElement('p');
-                            newDescEl.className = 'text-xs text-stone-400 truncate';
+                            newDescEl.className = 'text-xs text-stone-400 truncate mt-0.5';
                             newDescEl.textContent = description;
-                            nameEl.parentNode.insertBefore(newDescEl, nameEl.nextSibling);
+                            contentDiv.appendChild(newDescEl);
                         }
                     }
 
                     // Store offline-edited data in DOM attributes for later edit
                     itemEl.setAttribute('data-offline-name', name);
                     itemEl.setAttribute('data-offline-description', description);
+
+                    // Update mobile action button data attributes
+                    const mobileBtn = itemEl.querySelector('button[data-item-id]');
+                    if (mobileBtn) {
+                        mobileBtn.setAttribute('data-item-name', name);
+                        mobileBtn.setAttribute('data-item-description', description);
+                    }
 
                     // Add sync indicator if not already present
                     if (!itemEl.classList.contains('pending-sync')) {
