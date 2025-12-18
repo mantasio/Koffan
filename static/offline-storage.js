@@ -59,7 +59,7 @@ class OfflineStorage {
 
             const request = store.add({
                 ...action,
-                timestamp: Date.now()
+                timestamp: Math.floor(Date.now() / 1000)  // Unix timestamp in seconds (matches server)
             });
 
             request.onsuccess = () => {

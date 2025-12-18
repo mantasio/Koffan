@@ -227,3 +227,21 @@ func GetStats(c *fiber.Ctx) error {
 	stats := db.GetStats()
 	return c.JSON(stats)
 }
+
+// GetItemVersion returns the current updated_at timestamp for an item (for offline sync conflict resolution)
+func GetItemVersion(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid ID"})
+	}
+
+	item, err := db.GetItemByID(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Item not found"})
+	}
+
+	return c.JSON(fiber.Map{
+		"id":         item.ID,
+		"updated_at": item.UpdatedAt,
+	})
+}

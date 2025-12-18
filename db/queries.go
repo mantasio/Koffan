@@ -10,6 +10,7 @@ type Section struct {
 	Name      string    `json:"name"`
 	SortOrder int       `json:"sort_order"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt int64     `json:"updated_at"`
 	Items     []Item    `json:"items"`
 }
 
@@ -23,6 +24,7 @@ type Item struct {
 	Uncertain   bool      `json:"uncertain"`
 	SortOrder   int       `json:"sort_order"`
 	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   int64     `json:"updated_at"`
 }
 
 // Session represents a user session
@@ -35,7 +37,7 @@ type Session struct {
 
 func GetAllSections() ([]Section, error) {
 	rows, err := DB.Query(`
-		SELECT id, name, sort_order, created_at
+		SELECT id, name, sort_order, created_at, COALESCE(updated_at, 0)
 		FROM sections
 		ORDER BY sort_order ASC
 	`)
@@ -47,7 +49,7 @@ func GetAllSections() ([]Section, error) {
 	var sections []Section
 	for rows.Next() {
 		var s Section
-		err := rows.Scan(&s.ID, &s.Name, &s.SortOrder, &s.CreatedAt)
+		err := rows.Scan(&s.ID, &s.Name, &s.SortOrder, &s.CreatedAt, &s.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -64,9 +66,9 @@ func GetAllSections() ([]Section, error) {
 func GetSectionByID(id int64) (*Section, error) {
 	var s Section
 	err := DB.QueryRow(`
-		SELECT id, name, sort_order, created_at
+		SELECT id, name, sort_order, created_at, COALESCE(updated_at, 0)
 		FROM sections WHERE id = ?
-	`, id).Scan(&s.ID, &s.Name, &s.SortOrder, &s.CreatedAt)
+	`, id).Scan(&s.ID, &s.Name, &s.SortOrder, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +96,7 @@ func CreateSection(name string) (*Section, error) {
 }
 
 func UpdateSection(id int64, name string) (*Section, error) {
-	_, err := DB.Exec(`UPDATE sections SET name = ? WHERE id = ?`, name, id)
+	_, err := DB.Exec(`UPDATE sections SET name = ?, updated_at = strftime('%s', 'now') WHERE id = ?`, name, id)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +188,7 @@ func MoveSectionDown(id int64) error {
 
 func GetItemsBySection(sectionID int64) ([]Item, error) {
 	rows, err := DB.Query(`
-		SELECT id, section_id, name, description, completed, uncertain, sort_order, created_at
+		SELECT id, section_id, name, description, completed, uncertain, sort_order, created_at, COALESCE(updated_at, 0)
 		FROM items
 		WHERE section_id = ?
 		ORDER BY completed ASC, sort_order ASC
@@ -199,7 +201,7 @@ func GetItemsBySection(sectionID int64) ([]Item, error) {
 	var items []Item
 	for rows.Next() {
 		var i Item
-		err := rows.Scan(&i.ID, &i.SectionID, &i.Name, &i.Description, &i.Completed, &i.Uncertain, &i.SortOrder, &i.CreatedAt)
+		err := rows.Scan(&i.ID, &i.SectionID, &i.Name, &i.Description, &i.Completed, &i.Uncertain, &i.SortOrder, &i.CreatedAt, &i.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -211,9 +213,9 @@ func GetItemsBySection(sectionID int64) ([]Item, error) {
 func GetItemByID(id int64) (*Item, error) {
 	var i Item
 	err := DB.QueryRow(`
-		SELECT id, section_id, name, description, completed, uncertain, sort_order, created_at
+		SELECT id, section_id, name, description, completed, uncertain, sort_order, created_at, COALESCE(updated_at, 0)
 		FROM items WHERE id = ?
-	`, id).Scan(&i.ID, &i.SectionID, &i.Name, &i.Description, &i.Completed, &i.Uncertain, &i.SortOrder, &i.CreatedAt)
+	`, id).Scan(&i.ID, &i.SectionID, &i.Name, &i.Description, &i.Completed, &i.Uncertain, &i.SortOrder, &i.CreatedAt, &i.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +240,7 @@ func CreateItem(sectionID int64, name, description string) (*Item, error) {
 
 func UpdateItem(id int64, name, description string) (*Item, error) {
 	_, err := DB.Exec(`
-		UPDATE items SET name = ?, description = ? WHERE id = ?
+		UPDATE items SET name = ?, description = ?, updated_at = strftime('%s', 'now') WHERE id = ?
 	`, name, description, id)
 	if err != nil {
 		return nil, err
@@ -252,7 +254,7 @@ func DeleteItem(id int64) error {
 }
 
 func ToggleItemCompleted(id int64) (*Item, error) {
-	_, err := DB.Exec(`UPDATE items SET completed = NOT completed WHERE id = ?`, id)
+	_, err := DB.Exec(`UPDATE items SET completed = NOT completed, updated_at = strftime('%s', 'now') WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +262,7 @@ func ToggleItemCompleted(id int64) (*Item, error) {
 }
 
 func ToggleItemUncertain(id int64) (*Item, error) {
-	_, err := DB.Exec(`UPDATE items SET uncertain = NOT uncertain WHERE id = ?`, id)
+	_, err := DB.Exec(`UPDATE items SET uncertain = NOT uncertain, updated_at = strftime('%s', 'now') WHERE id = ?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +275,7 @@ func MoveItemToSection(id, newSectionID int64) (*Item, error) {
 	DB.QueryRow("SELECT COALESCE(MAX(sort_order), -1) FROM items WHERE section_id = ?", newSectionID).Scan(&maxOrder)
 
 	_, err := DB.Exec(`
-		UPDATE items SET section_id = ?, sort_order = ? WHERE id = ?
+		UPDATE items SET section_id = ?, sort_order = ?, updated_at = strftime('%s', 'now') WHERE id = ?
 	`, newSectionID, maxOrder+1, id)
 	if err != nil {
 		return nil, err

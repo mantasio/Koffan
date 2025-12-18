@@ -39,7 +39,8 @@ func createTables() {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL,
 		sort_order INTEGER NOT NULL,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at INTEGER DEFAULT (strftime('%s', 'now'))
 	);
 
 	CREATE TABLE IF NOT EXISTS items (
@@ -51,6 +52,7 @@ func createTables() {
 		uncertain BOOLEAN DEFAULT FALSE,
 		sort_order INTEGER NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at INTEGER DEFAULT (strftime('%s', 'now')),
 		FOREIGN KEY (section_id) REFERENCES sections(id) ON DELETE CASCADE
 	);
 
@@ -66,6 +68,50 @@ func createTables() {
 	_, err := DB.Exec(schema)
 	if err != nil {
 		log.Fatal("Failed to create tables:", err)
+	}
+
+	// Migration: Add updated_at column if it doesn't exist
+	runMigrations()
+}
+
+func runMigrations() {
+	// Check if updated_at column exists in sections
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('sections') WHERE name='updated_at'").Scan(&count)
+	if err != nil {
+		log.Println("Migration check failed:", err)
+		return
+	}
+
+	if count == 0 {
+		log.Println("Running migration: Adding updated_at to sections...")
+		_, err := DB.Exec("ALTER TABLE sections ADD COLUMN updated_at INTEGER DEFAULT (strftime('%s', 'now'))")
+		if err != nil {
+			log.Println("Migration failed for sections:", err)
+		} else {
+			// Set updated_at for existing rows
+			DB.Exec("UPDATE sections SET updated_at = strftime('%s', 'now') WHERE updated_at IS NULL")
+			log.Println("Migration completed: sections.updated_at added")
+		}
+	}
+
+	// Check if updated_at column exists in items
+	err = DB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('items') WHERE name='updated_at'").Scan(&count)
+	if err != nil {
+		log.Println("Migration check failed:", err)
+		return
+	}
+
+	if count == 0 {
+		log.Println("Running migration: Adding updated_at to items...")
+		_, err := DB.Exec("ALTER TABLE items ADD COLUMN updated_at INTEGER DEFAULT (strftime('%s', 'now'))")
+		if err != nil {
+			log.Println("Migration failed for items:", err)
+		} else {
+			// Set updated_at for existing rows
+			DB.Exec("UPDATE items SET updated_at = strftime('%s', 'now') WHERE updated_at IS NULL")
+			log.Println("Migration completed: items.updated_at added")
+		}
 	}
 }
 

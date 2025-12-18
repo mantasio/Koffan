@@ -210,7 +210,7 @@ function shoppingList() {
             window.addEventListener('online', () => {
                 console.log('[App] Back online');
                 this.isOnline = true;
-                this.processOfflineQueue();
+                this.fullRefresh();
             });
 
             window.addEventListener('offline', () => {
@@ -264,6 +264,21 @@ function shoppingList() {
 
                 for (const action of actions) {
                     try {
+                        // For modifying actions - check server version first (Last Write Wins)
+                        if (action.type === 'toggle_item' || action.type === 'update_item') {
+                            const itemId = this.extractItemId(action.url);
+                            if (itemId) {
+                                const serverVersion = await this.getItemVersion(itemId);
+                                if (serverVersion && serverVersion.updated_at > action.timestamp) {
+                                    // Server has newer version - skip offline action
+                                    console.log('[Sync] Server version newer, skipping:', action.type,
+                                        'server:', serverVersion.updated_at, 'offline:', action.timestamp);
+                                    await window.offlineStorage.clearAction(action.id);
+                                    continue;
+                                }
+                            }
+                        }
+
                         const fetchOptions = {
                             method: action.method,
                             headers: action.headers || {}
@@ -298,6 +313,25 @@ function shoppingList() {
             } finally {
                 this.processingQueue = false;
             }
+        },
+
+        // Get item version from server for conflict resolution
+        async getItemVersion(itemId) {
+            try {
+                const response = await fetch(`/api/item/${itemId}/version`);
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (e) {
+                console.error('[Sync] Failed to get item version:', e);
+            }
+            return null;
+        },
+
+        // Extract item ID from URL like /items/123/toggle
+        extractItemId(url) {
+            const match = url.match(/\/items\/(\d+)/);
+            return match ? match[1] : null;
         },
 
         async fullRefresh() {
