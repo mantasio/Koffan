@@ -1229,27 +1229,26 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.log('[Offline] Item queued:', name);
             });
 
-            // Clear form (use appropriate method based on form type)
-            if (typeof clearFormKeepSection === 'function' && form.id === 'add-item-form') {
-                clearFormKeepSection(form);
-            } else {
-                form.reset();
-            }
-
-            // Update stats and close mobile modal
+            // Update stats and handle modal
             const alpineData = Alpine.$data(document.querySelector('[x-data="shoppingList()"]'));
             if (alpineData) {
                 alpineData.stats.total++;
                 // Close mobile add item modal if open (unless addMore is enabled)
                 if (!alpineData.addMore) {
+                    form.reset();
                     alpineData.showAddItem = false;
                 } else {
-                    // Keep modal open, focus on name input
+                    // Keep modal open, clear only name and description
+                    form.querySelector('[name=name]').value = '';
+                    form.querySelector('[name=description]').value = '';
                     setTimeout(() => {
                         const nameInput = form.querySelector('[name=name]');
                         if (nameInput) nameInput.focus();
                     }, 100);
                 }
+            } else {
+                // Fallback if no Alpine data
+                form.reset();
             }
 
             return false;
@@ -1534,7 +1533,7 @@ window.updateSectionAfterDelete = function(itemElement) {
 
     // Count remaining items (active + completed)
     const activeItems = section.querySelectorAll('.active-items > [id^="item-"]').length;
-    const completedContainer = section.querySelector('[x-show="open"]');
+    const completedContainer = section.querySelector('.completed-items');
     const completedItems = completedContainer ? completedContainer.querySelectorAll('[id^="item-"]').length : 0;
 
     // Subtract 1 for the item being deleted (it's still in DOM at this point)

@@ -152,8 +152,8 @@
             <form
                 hx-post="/items"
                 hx-swap="none"
-                hx-on::after-request="htmx.trigger('body', 'refreshList'); window.dispatchEvent(new CustomEvent('item-added'))"
-                @item-added.window="refreshStats(); if (!addMore) { showAddItem = false; } else { $el.querySelector('[name=name]').value = ''; $el.querySelector('[name=description]').value = ''; $nextTick(() => $refs.itemNameInput.focus()); }"
+                hx-on::after-request="window.dispatchEvent(new CustomEvent('item-added'))"
+                @item-added.window="refreshStats(); if (!addMore) { $el.reset(); htmx.trigger('body', 'refreshList'); showAddItem = false; } else { $el.querySelector('[name=name]').value = ''; $el.querySelector('[name=description]').value = ''; setTimeout(() => $refs.itemNameInput.focus(), 150); }"
                 class="space-y-4"
             >
                 <select name="section_id" required

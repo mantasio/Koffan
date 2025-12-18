@@ -43,7 +43,7 @@
             </svg>
             <span class="text-xs text-stone-500"><span x-text="t('list.bought')"></span> ({{$completedItems}})</span>
         </button>
-        <div x-show="open" x-collapse class="divide-y divide-stone-100">
+        <div x-show="open" x-collapse class="divide-y divide-stone-100 completed-items">
             {{range .Section.Items}}
             {{if .Completed}}
             {{template "partials/item_completed" dict "Item" . "Sections" $.Sections}}
