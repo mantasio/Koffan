@@ -5,7 +5,7 @@
 <h1 align="center">Koffan</h1>
 
 <p align="center">
-  <strong>Open source shopping assistant</strong><br>
+  <strong>Free shopping assistant</strong><br>
   A fast and simple app for managing your shopping list together
 </p>
 
